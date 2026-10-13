@@ -1,0 +1,18 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Registro de asistencia</title>
+<style>body{margin:0;font:17px system-ui,sans-serif;background:#10151c;color:#e8ecf1;display:grid;place-items:center;min-height:100vh}main{width:min(92vw,380px)}
+h1{font-size:30px;margin:0 0 16px}label{color:#9aa6b4;font-size:14px}input,button{width:100%;padding:14px;border-radius:10px;border:0;font-size:18px;margin:6px 0 12px}
+input{background:#18202a;color:inherit;border:1px solid #2a3542}button{background:#7f9bff;color:#10151c;font-weight:700}
+#r{border-radius:12px;padding:20px;text-align:center;display:none}#r b{display:block;font-size:28px;margin-bottom:4px}.ok{background:#16382a;color:#52d58a}.no{background:#43201f;color:#ff8080}.wa{background:#41300e;color:#f0b64a}</style></head>
+<body><main><h1>¿Vas a entrenar hoy?</h1><label for="c">Número de cédula</label><input id="c" inputmode="numeric" autocomplete="off"><button id="b">Registrar asistencia</button><div id="r"></div></main>
+<script type="module">
+import {db,doc,getDoc,setDoc,serverTimestamp} from './firebase-config.js';
+const $=s=>document.querySelector(s);
+const show=(k,t,d='')=>{const r=$('#r');r.className=k;r.style.display='block';r.innerHTML=`<b>${t}</b>${d}`};
+$('#b').onclick=async()=>{const ced=$('#c').value.replace(/\D/g,'');if(!ced)return show('no','Escribe tu cédula');
+ try{const s=await getDoc(doc(db,'members',ced));if(!s.exists())return show('no','Cédula no encontrada','Pregunta en recepción');
+  const m=s.data(),t=new Date();t.setHours(0,0,0,0);const days=Math.round((m.end.toDate()-t)/864e5),ok=days>=0;
+  try{await setDoc(doc(db,'attendance',ced+'_'+Math.floor(Date.now()/3e5)),{cedula:ced,name:m.name,ok,at:serverTimestamp()})}
+  catch(e){return show('wa','Ya registraste tu entrada','Hace pocos minutos')}
+  ok?show('ok','Puede entrar',`${m.name} · ${days===0?'tu plan vence hoy':'te quedan '+days+' días'}`):show('no','Membresía vencida',`${m.name}, renueva tu plan en recepción`)}
+ catch(e){show('no','No se pudo registrar','Revisa tu conexión e intenta de nuevo')}};
+</script></body></html>
