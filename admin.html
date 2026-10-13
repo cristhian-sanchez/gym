@@ -32,17 +32,19 @@ const P={'Día':[1,8000],Quincenal:[15,50000],Mensual:[30,90000],Trimestral:[90,
 const t0=()=>{const d=new Date();d.setHours(0,0,0,0);return d},dd=m=>Math.round((m.end-t0())/864e5);
 const bd=m=>{const d=dd(m);return d<0?'<span class="badge no">Vencida</span>':d<=7?'<span class="badge wa">Por vencer</span>':'<span class="badge ok">Vigente</span>'};
 const fd=d=>d.toLocaleDateString('es-CO',{day:'numeric',month:'short'}),ft=d=>d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
-const opts=()=>Object.keys(P).map(k=>`<option value="${k}" ${k==='Mensual'?'selected':''}>${k} · ${money(P[k][1])}</option>`).join('');
+const opts=()=>Object.keys(P).map(k=>`<option value="${k}" ${k==='Mensual'?'selected':''}>${k} · ${money(P[k][1])}</option>`).join('')+'<option value="Personalizado">Personalizado</option>';
 let M={},A=[],PY=[],cur='panel',un=[];
-async function charge(ced,name,tel,plan){const o=M[ced],e=new Date(Math.max(o?o.end:0,t0()));e.setDate(e.getDate()+P[plan][0]);
- await setDoc(doc(db,'members',ced),{name,tel,plan,end:Timestamp.fromDate(e)});
- await setDoc(doc(db,'payments',crypto.randomUUID()),{cedula:ced,name,plan,amt:P[plan][1],at:Timestamp.now()})}
+const msg=x=>x.code==='permission-denied'?'Sin permiso: publica las reglas de Firestore incluyendo el bloque de "payments".':'Error: '+x.message;
+async function charge(ced,name,tel,plan,days,amt){const o=M[ced],e=new Date(Math.max(o?o.end:0,t0()));e.setDate(e.getDate()+days);
+ await setDoc(doc(db,'payments',crypto.randomUUID()),{cedula:ced,name,plan,amt,days,at:Timestamp.now()});
+ await setDoc(doc(db,'members',ced),{name,tel,plan,end:Timestamp.fromDate(e)})}
+function preset(p,a,d){const v=P[$(p).value];if(v){$(d).value=v[0];$(a).value=v[1]}}
 const V={
 panel:()=>`<h1>Resumen del gimnasio</h1><div class="grid g4"><div class="card"><div class="big" id="s1"></div><div class="mut">Socios con membresía vigente</div></div><div class="card"><div class="big" id="s2"></div><div class="mut">Ingresos del mes</div></div><div class="card"><div class="big" id="s3"></div><div class="mut">Entradas de hoy</div></div><div class="card"><div class="big" id="s4"></div><div class="mut">Vencen en 7 días</div></div></div>
 <div class="grid g2" style="margin-top:14px"><div class="card"><h2>Por vencer</h2><div id="soon"></div></div><div class="card"><h2>Últimas entradas</h2><div id="lastin"></div></div></div>`,
 socios:()=>`<h1>Socios</h1><div class="card"><label for="sq">Buscar</label><input id="sq" placeholder="Nombre, cédula o teléfono"><div id="ml"></div></div>
-<details class="card" style="margin-top:14px"><summary style="cursor:pointer;font-weight:600">Nuevo socio</summary><div style="margin-top:10px"><label for="nc">Cédula</label><input id="nc" inputmode="numeric"><label for="nn">Nombre completo</label><input id="nn"><label for="nt">Teléfono</label><input id="nt" inputmode="tel"><label for="np">Plan</label><select id="np">${opts()}</select><button class="btn" id="sv">Registrar y cobrar</button><p class="mut" id="se"></p></div></details>`,
-pagos:()=>`<h1>Pagos</h1><div class="grid g2"><div class="card"><h2>Registrar pago</h2><label for="pm">Socio</label><select id="pm"></select><label for="pp">Plan</label><select id="pp">${opts()}</select><button class="btn" id="pg">Cobrar y renovar</button><p class="mut" id="pe"></p></div><div class="card"><h2>Pagos recientes</h2><div id="pl"></div></div></div>`,
+<details class="card" style="margin-top:14px"><summary style="cursor:pointer;font-weight:600">Nuevo socio</summary><div style="margin-top:10px"><label for="nc">Cédula</label><input id="nc" inputmode="numeric"><label for="nn">Nombre completo</label><input id="nn"><label for="nt">Teléfono</label><input id="nt" inputmode="tel"><label for="np">Plan</label><select id="np">${opts()}</select><label for="na">Valor cobrado (COP)</label><input id="na" inputmode="numeric"><label for="nd">Duración (días)</label><input id="nd" inputmode="numeric"><button class="btn" id="sv">Registrar y cobrar</button><p class="mut" id="se"></p></div></details>`,
+pagos:()=>`<h1>Pagos</h1><div class="grid g2"><div class="card"><h2>Registrar pago</h2><label for="pm">Socio</label><select id="pm"></select><label for="pp">Plan</label><select id="pp">${opts()}</select><label for="pa">Valor cobrado (COP)</label><input id="pa" inputmode="numeric"><label for="pd">Duración (días)</label><input id="pd" inputmode="numeric"><button class="btn" id="pg">Cobrar y renovar</button><p class="mut" id="pe"></p></div><div class="card"><h2>Pagos recientes</h2><div id="pl"></div></div></div>`,
 cartel:()=>`<h1>Cartel QR</h1><div class="grid g2"><div class="card poster"><h2 style="font-size:36px">Registra tu asistencia</h2><img class="qr" id="qr" alt="QR de registro"><p style="text-align:left;display:inline-block"><strong>1.</strong> Escanea el código con la cámara del celular<br><strong>2.</strong> Escribe tu número de cédula<br><strong>3.</strong> Listo, a entrenar</p></div><div class="card"><h2>Cómo funciona</h2><p>Imprime el cartel una sola vez y pégalo en la entrada. Todos los socios usan el mismo QR y el sistema valida la membresía con la cédula.</p><p class="mut" id="url" style="word-break:break-all"></p><button class="btn" onclick="window.print()">Imprimir cartel</button></div></div>`};
 function fill(){const tz=t0(),now=new Date(),L=Object.entries(M).map(([id,m])=>({id,...m})),set=(i,h)=>{const e=$('#'+i);if(e)e.innerHTML=h};
  const td=A.filter(a=>a.at.toDate()>=tz),soon=L.filter(m=>{const d=dd(m);return d>=0&&d<=7}).sort((a,b)=>a.end-b.end);
@@ -56,13 +58,18 @@ function fill(){const tz=t0(),now=new Date(),L=Object.entries(M).map(([id,m])=>(
 const N=[['panel','Panel'],['socios','Socios'],['pagos','Pagos'],['cartel','Cartel QR']];
 $('#nav').innerHTML=N.map(n=>`<button data-v="${n[0]}">${n[1]}</button>`).join('');$('#bar').innerHTML=$('#nav').innerHTML;
 function go(v){cur=v;document.querySelectorAll('[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));$('#main').innerHTML=V[v]();
- if(v==='cartel'){const q=qrcode(0,'M'),u=new URL('registro.html',location.href).href;q.addData(u);q.make();$('#qr').src=q.createDataURL(8,2);$('#url').textContent=u}fill()}
+ if(v==='cartel'){const q=qrcode(0,'M'),u=new URL('registro.html',location.href).href;q.addData(u);q.make();$('#qr').src=q.createDataURL(8,2);$('#url').textContent=u}if(v==='socios')preset('#np','#na','#nd');if(v==='pagos')preset('#pp','#pa','#pd');fill()}
 document.addEventListener('click',async e=>{const t=e.target,v=t.closest('[data-v]'),r=t.closest('[data-r]');
  if(v)return go(v.dataset.v);
- if(r){const m=M[r.dataset.r];return charge(r.dataset.r,m.name,m.tel||'',m.plan)}
- if(t.id==='sv'){const c=$('#nc').value.replace(/\D/g,''),n=$('#nn').value.trim();if(!c||!n)return $('#se').textContent='Escribe la cédula y el nombre.';
-  await charge(c,n,$('#nt').value.trim(),$('#np').value);go('socios')}
- if(t.id==='pg'){const c=$('#pm').value;if(!c)return $('#pe').textContent='Primero registra un socio.';const m=M[c];await charge(c,m.name,m.tel||'',$('#pp').value);$('#pe').textContent='Pago registrado. '+m.name+' queda activo.'}});
+ if(r){const m=M[r.dataset.r],p=P[m.plan]||P.Mensual;if(!confirm('¿Renovar a '+m.name+' por '+p[0]+' días y cobrar '+money(p[1])+'?'))return;
+  try{await charge(r.dataset.r,m.name,m.tel||'',m.plan,p[0],p[1])}catch(x){alert(msg(x))}return}
+ if(t.id==='sv'){const c=$('#nc').value.replace(/\D/g,''),n=$('#nn').value.trim(),a=$('#na').value.replace(/\D/g,''),d=+$('#nd').value.replace(/\D/g,'');
+  if(!c||!n||a===''||!d)return $('#se').textContent='Completa cédula, nombre, valor y días.';
+  try{await charge(c,n,$('#nt').value.trim(),$('#np').value,d,+a);go('socios')}catch(x){$('#se').textContent=msg(x)}}
+ if(t.id==='pg'){const c=$('#pm').value,a=$('#pa').value.replace(/\D/g,''),d=+$('#pd').value.replace(/\D/g,'');if(!c)return $('#pe').textContent='Primero registra un socio.';
+  if(a===''||!d)return $('#pe').textContent='Escribe el valor y los días.';const m=M[c];
+  try{await charge(c,m.name,m.tel||'',$('#pp').value,d,+a);$('#pe').textContent='Pago de '+money(+a)+' registrado. '+m.name+' queda activo '+d+' días más.'}catch(x){$('#pe').textContent=msg(x)}}});
+document.addEventListener('change',e=>{if(e.target.id==='np')preset('#np','#na','#nd');if(e.target.id==='pp')preset('#pp','#pa','#pd')});
 document.addEventListener('input',e=>{if(e.target.id==='sq')fill()});
 $('#in').onclick=()=>signInWithEmailAndPassword(auth,$('#em').value,$('#pw').value).catch(()=>$('#err').textContent='Correo o contraseña incorrectos');
 $('#out').onclick=()=>signOut(auth);
