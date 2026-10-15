@@ -8,11 +8,23 @@ input{background:#18202a;color:inherit;border:1px solid #2a3542}button{backgroun
 import {db,doc,getDoc,setDoc,serverTimestamp} from './firebase-config.js';
 const $=s=>document.querySelector(s);
 const show=(k,t,d='')=>{const r=$('#r');r.className=k;r.style.display='block';r.innerHTML=`<b>${t}</b>${d}`};
+const ds=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const F=['Lo difícil ya lo hiciste: llegar. Ahora a entrenar.','Cada repetición cuenta, aunque hoy no se sienta así.','No tienes que ser perfecto, solo constante.','Tu yo de dentro de un mes te va a agradecer este día.','La disciplina gana cuando la motivación se va.','Un día más es un día menos para lograrlo.','Hoy suma, aunque sea poco. Lo importante es no parar.','Entrenar sin ganas es lo que marca la diferencia.','Los pequeños esfuerzos repetidos hacen grandes cambios.','Tu cuerpo aguanta más de lo que tu mente cree.'];
+const MS={3:'¡3 días de racha! Ya se está formando el hábito.',7:'¡Una semana de racha! Eso es constancia de verdad.',14:'¡Dos semanas sin soltar! Vas muy en serio.',30:'¡30 días de racha! Esto ya es parte de tu vida.',60:'¡60 días! Eres un ejemplo para los demás.',100:'¡100 días de racha! Leyenda del gimnasio.'};
+const phrase=n=>MS[n]||F[Math.floor(Date.now()/864e5)%F.length];
+const fire=n=>`<span style="display:block;margin-top:12px;font-size:20px">🔥 ${n===1?'Empiezas tu racha: 1 día':'Llevas <strong>'+n+'</strong> días de racha'}</span><span style="display:block;margin-top:6px;font-size:15px">${phrase(n)}</span>`;
+async function streak(ced,name){const t=new Date();t.setHours(0,0,0,0);const today=ds(t),ref=doc(db,'streaks',ced);let cur=null;
+ try{const s=await getDoc(ref);if(s.exists())cur=s.data()}catch(e){}
+ if(cur&&cur.last===today)return cur.count;
+ const gap=cur?Math.round((t-new Date(cur.last+'T00:00:00'))/864e5):99,count=cur&&gap<=2?cur.count+1:1;
+ await setDoc(ref,{name,last:today,count,best:Math.max(count,cur?cur.best||0:0)});return count}
 $('#b').onclick=async()=>{const ced=$('#c').value.replace(/\D/g,'');if(!ced)return show('no','Escribe tu cédula');
  try{const s=await getDoc(doc(db,'members',ced));if(!s.exists())return show('no','Cédula no encontrada','Pregunta en recepción');
-  const m=s.data(),t=new Date();t.setHours(0,0,0,0);const days=Math.round((m.end.toDate()-t)/864e5),ok=days>=0;
-  try{await setDoc(doc(db,'attendance',ced+'_'+Math.floor(Date.now()/3e5)),{cedula:ced,name:m.name,ok,at:serverTimestamp()})}
-  catch(e){return show('wa','Ya registraste tu entrada','Hace pocos minutos')}
-  ok?show('ok','Puede entrar',`${m.name} · ${days===0?'tu plan vence hoy':'te quedan '+days+' días'}`):show('no','Membresía vencida',`${m.name}, renueva tu plan en recepción`)}
+  const m=s.data(),t=new Date();t.setHours(0,0,0,0);const days=Math.round((m.end.toDate()-t)/864e5),ok=days>=0;let dup=false;
+  try{await setDoc(doc(db,'attendance',ced+'_'+Math.floor(Date.now()/3e5)),{cedula:ced,name:m.name,ok,at:serverTimestamp()})}catch(e){dup=true}
+  let n=0;if(ok){try{n=await streak(ced,m.name)}catch(e){}}
+  const x=n?fire(n):'';
+  if(dup)return show('wa','Ya registraste tu entrada','Hace pocos minutos'+x);
+  ok?show('ok','Puede entrar',`${m.name} · ${days===0?'tu plan vence hoy':'te quedan '+days+' días'}${x}`):show('no','Membresía vencida',`${m.name}, renueva tu plan en recepción`)}
  catch(e){show('no','No se pudo registrar','Revisa tu conexión e intenta de nuevo')}};
 </script></body></html>
