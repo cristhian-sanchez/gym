@@ -14,19 +14,20 @@ main{padding:26px;max-width:1000px;width:100%}.grid{display:grid;gap:14px}.g4{gr
 .badge{font-size:13px;font-weight:600;padding:2px 10px;border-radius:99px;white-space:nowrap}.ok{background:var(--ob);color:var(--ok)}.no{background:var(--nb);color:var(--no)}.wa{background:var(--wb);color:var(--wa)}
 .btn{background:var(--ac);color:var(--ai);border:0;border-radius:8px;padding:10px 16px;font:600 15px Barlow,sans-serif;cursor:pointer}.btn.s{background:none;color:var(--ink);border:1px solid var(--ln)}.btn.sm{padding:5px 11px;font-size:14px}
 input,select{width:100%;padding:10px;border:1px solid var(--ln);border-radius:8px;background:var(--bg);color:var(--ink);font:16px Barlow,sans-serif;margin:4px 0 10px}label{font-size:14px;color:var(--mut)}
-a.btn{text-decoration:none;display:inline-block}.qr{display:block;margin:10px auto;width:240px;image-rendering:pixelated;background:#fff;padding:8px;border-radius:8px}.poster{text-align:center;background:#fff!important;color:#111}.poster .logo{width:110px;height:110px;margin:0 auto 8px}
+a.btn{text-decoration:none;display:inline-block}.qr{display:block;margin:10px auto;width:240px;image-rendering:pixelated;background:#fff;padding:8px;border-radius:8px}.rbox{border-radius:10px;padding:16px;text-align:center}.rbox b{display:block;font:700 28px 'Barlow Condensed',sans-serif;margin-bottom:4px}.poster{text-align:center;background:#fff!important;color:#111}.poster .logo{width:110px;height:110px;margin:0 auto 8px}
 .bar{display:none}[hidden]{display:none!important}
 @media(max-width:760px){.app{grid-template-columns:1fr}aside{display:none}main{padding:16px 14px 90px}
-.bar{display:flex;position:fixed;left:0;right:0;bottom:0;background:var(--sf);border-top:1px solid var(--ln);padding:6px 4px}.bar button{flex:1;background:none;border:0;color:var(--mut);font:600 13px Barlow,sans-serif;padding:10px 2px}.bar button.on{color:var(--ac)}}
+.bar{display:flex;position:fixed;left:0;right:0;bottom:0;background:var(--sf);border-top:1px solid var(--ln);padding:6px 4px}.bar button{flex:1;background:none;border:0;color:var(--mut);font:600 12px Barlow,sans-serif;padding:10px 2px}.bar button.on{color:var(--ac)}}
 @media print{aside,.bar,.card:not(.poster),h1{display:none!important}.app{display:block}}
 </style></head>
 <body>
 <section id="login" class="card" style="max-width:380px;margin:60px auto"><img class="logo" src="logo.jpg" alt="" onerror="this.style.display='none'" style="margin:0 auto 10px;width:96px;height:96px"><h1 style="text-align:center;color:var(--ac);text-transform:uppercase">Power House</h1><input id="em" type="email" placeholder="Correo" autocomplete="username"><input id="pw" type="password" placeholder="Contraseña" autocomplete="current-password"><button class="btn" id="in" style="width:100%">Entrar</button><p id="err" style="color:var(--no)"></p></section>
 <div class="app" id="app" hidden><aside><div class="brandrow"><img class="logo" src="logo.jpg" alt="" onerror="this.style.display='none'"><div><div class="brand">Power House</div><div class="mut">Gym · Panel</div></div></div><nav id="nav"></nav><button class="btn s sm" id="out" style="margin-top:20px">Cerrar sesión</button></aside><main id="main"></main><div class="bar" id="bar"></div></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
-import {auth,db,signInWithEmailAndPassword,onAuthStateChanged,signOut,collection,doc,setDoc,onSnapshot,query,orderBy,limit,Timestamp} from './firebase-config.js';
-import {deleteDoc} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+import {auth,db,signInWithEmailAndPassword,onAuthStateChanged,signOut,collection,doc,setDoc,onSnapshot,query,orderBy,limit,Timestamp,getDoc,serverTimestamp} from './firebase-config.js';
+import {deleteDoc,writeBatch} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])),money=n=>'$'+n.toLocaleString('es-CO');
 const P={'Día':[1,8000],Quincenal:[15,50000],Mensual:[30,90000],Trimestral:[90,240000]};
 const t0=()=>{const d=new Date();d.setHours(0,0,0,0);return d},dd=m=>Math.round((m.end-t0())/864e5);
@@ -42,17 +43,58 @@ async function charge(ced,name,tel,plan,days,amt){const o=M[ced],e=new Date(Math
  await setDoc(doc(db,'payments',crypto.randomUUID()),{cedula:ced,name,plan,amt,days,at:Timestamp.now()});
  await setDoc(doc(db,'members',ced),{name,tel,plan,end:Timestamp.fromDate(e)})}
 function preset(p,a,d){const v=P[$(p).value];if(v){$(d).value=v[0];$(a).value=v[1]}}
+const norm=s=>String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+const pick=(row,keys)=>{for(const k of Object.keys(row))if(keys.includes(norm(k)))return row[k];return ''};
+function toDate(v){if(v instanceof Date&&!isNaN(v))return new Date(v.getFullYear(),v.getMonth(),v.getDate());
+ if(typeof v==='number'){const d=new Date(Math.round((v-25569)*864e5));return new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())}
+ const s=String(v).trim();let m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+ if(m){const y=+m[3]<100?2000+ +m[3]:+m[3];return new Date(y,+m[2]-1,+m[1])}
+ m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);return m?new Date(+m[1],+m[2]-1,+m[3]):null}
+const ds=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+async function streak(ced,name){const t=t0(),today=ds(t),ref=doc(db,'streaks',ced);let cur=null;
+ try{const s=await getDoc(ref);if(s.exists())cur=s.data()}catch(e){}
+ if(cur&&cur.last===today)return cur.count;
+ const gap=cur?Math.round((t-new Date(cur.last+'T00:00:00'))/864e5):99,count=cur&&gap<=2?cur.count+1:1;
+ await setDoc(ref,{name,last:today,count,best:Math.max(count,cur?cur.best||0:0)});return count}
+async function manualEntry(ced){const m=M[ced];if(!m)return{k:'no',t:'Cédula no registrada',d:'Verifica el número o registra al socio primero.'};
+ const days=dd(m),ok=days>=0;
+ try{await setDoc(doc(db,'attendance',ced+'_'+Math.floor(Date.now()/3e5)),{cedula:ced,name:m.name,ok,at:serverTimestamp()})}catch(e){return{k:'wa',t:'Ya registró hace pocos minutos',d:m.name}}
+ let n=0;if(ok){try{n=await streak(ced,m.name)}catch(e){}}
+ return ok?{k:'ok',t:'Puede entrar',d:m.name+' · '+(days===0?'vence hoy':'le quedan '+days+' días')+(n?' · 🔥 racha de '+n:'')}:{k:'no',t:'Membresía vencida',d:m.name+' venció el '+fd(m.end)+'. Renovar en caja.'}}
+let IMP=[];
+async function parseFile(f){if(!f)return;
+ try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array',cellDates:true}),rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+ const y=t0();y.setDate(y.getDate()-1);let sd=0,bad=0,ex=0;IMP=[];
+ rows.forEach(r=>{const ced=String(pick(r,['cedula','documento','cc','identificacion','id'])).replace(/\D/g,''),name=String(pick(r,['nombre','nombres','nombrecompleto','name'])).trim();
+  if(ced.length<5||!name){bad++;return}
+  const d=toDate(pick(r,['vence','vencimiento','fechadevencimiento','fechavencimiento','fin','venceel'])),pl=String(pick(r,['plan','membresia'])).trim();
+  const plan=Object.keys(P).find(k=>norm(k)===norm(pl))||(pl?'Personalizado':'Mensual');if(!d)sd++;if(M[ced])ex++;
+  IMP.push({ced,name,tel:String(pick(r,['telefono','celular','cel','tel','whatsapp'])).replace(/\D/g,''),plan,end:d||y})});
+ $('#ip').innerHTML=`<p>${IMP.length} socios listos para importar${ex?`, ${ex} ya existen y se actualizarán`:''}${sd?`, ${sd} sin fecha (quedarán como vencidos)`:''}${bad?`, ${bad} filas omitidas por no tener cédula o nombre válidos`:''}.</p>`;$('#im').hidden=!IMP.length}
+ catch(x){$('#ip').innerHTML='<p style="color:var(--no)">No pude leer el archivo. Usa la plantilla (.xlsx o .csv).</p>'}}
+async function doImport(){const b=$('#im');b.disabled=true;let n=0;
+ try{for(let i=0;i<IMP.length;i+=400){const w=writeBatch(db);IMP.slice(i,i+400).forEach(x=>{w.set(doc(db,'members',x.ced),{name:x.name,tel:x.tel,plan:x.plan,end:Timestamp.fromDate(x.end)});n++});await w.commit()}
+  $('#ip').innerHTML=`<p style="color:var(--ok)">Listo: ${n} socios importados.</p>`;IMP=[];b.hidden=true}
+ catch(x){$('#ip').innerHTML=`<p style="color:var(--no)">${esc(msg(x))}</p>`}b.disabled=false}
+function dl(name,text,type){const l=document.createElement('a');l.href=URL.createObjectURL(new Blob(['\ufeff'+text],{type}));l.download=name;l.click()}
+function doExport(){const L=Object.entries(M).map(([id,m])=>({'Cédula':id,Nombre:m.name,'Teléfono':m.tel||'',Plan:m.plan,Vence:m.end.toLocaleDateString('es-CO'),Estado:dd(m)<0?'Vencida':'Vigente'})),
+ G=PY.map(p=>({Fecha:p.at.toDate().toLocaleString('es-CO'),'Cédula':p.cedula||'',Nombre:p.name,Concepto:p.plan,Valor:p.amt,'Días':p.days||0})),wb=XLSX.utils.book_new();
+ XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(L),'Socios');XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(G),'Pagos');XLSX.writeFile(wb,'PowerHouse_datos.xlsx')}
 const V={
 panel:()=>`<h1>Resumen del gimnasio</h1><div class="grid g4"><div class="card"><div class="big" id="s1"></div><div class="mut">Socios con membresía vigente</div></div><div class="card"><div class="big" id="s2"></div><div class="mut">Ingresos del mes</div></div><div class="card"><div class="big" id="s3"></div><div class="mut">Entradas de hoy</div></div><div class="card"><div class="big" id="s4"></div><div class="mut">Vencen en 7 días</div></div><div class="card"><div class="big" id="s5"></div><div class="mut">Stock bajo en inventario</div></div></div>
 <div class="grid g2" style="margin-top:14px"><div class="card"><h2>Ingresos · 7 días</h2><div id="c1"></div></div><div class="card"><h2>Entradas · 7 días</h2><div id="c2"></div></div></div>
 <div class="grid g2" style="margin-top:14px"><div class="card"><h2>Por vencer</h2><div id="soon"></div></div><div class="card"><h2>Últimas entradas</h2><div id="lastin"></div></div><div class="card"><h2>🔥 Top rachas</h2><div id="top"></div></div></div>`,
 socios:()=>`<h1>Socios</h1><div class="card" id="ed" hidden style="margin-bottom:14px"><h2>Editar socio</h2><label for="ec">Cédula</label><input id="ec" readonly><label for="en">Nombre completo</label><input id="en"><label for="et">Teléfono</label><input id="et" inputmode="tel"><label for="ep">Plan</label><select id="ep">${opts()}</select><label for="ev">Vence el</label><input id="ev" type="date"><div style="display:flex;gap:8px"><button class="btn" id="eg">Guardar cambios</button><button class="btn s" id="ex">Cancelar</button></div><p class="mut" id="ee"></p></div><div class="card"><label for="sq">Buscar</label><input id="sq" placeholder="Nombre, cédula o teléfono"><div id="ml"></div></div>
-<details class="card" style="margin-top:14px"><summary style="cursor:pointer;font-weight:600">Nuevo socio</summary><div style="margin-top:10px"><label for="nc">Cédula</label><input id="nc" inputmode="numeric"><label for="nn">Nombre completo</label><input id="nn"><label for="nt">Teléfono</label><input id="nt" inputmode="tel"><label for="np">Plan</label><select id="np">${opts()}</select><label for="na">Valor cobrado (COP)</label><input id="na" inputmode="numeric"><label for="nd">Duración (días)</label><input id="nd" inputmode="numeric"><button class="btn" id="sv">Registrar y cobrar</button><p class="mut" id="se"></p></div></details>`,
+<details class="card" style="margin-top:14px"><summary style="cursor:pointer;font-weight:600">Nuevo socio</summary><div style="margin-top:10px"><label for="nc">Cédula</label><input id="nc" inputmode="numeric"><label for="nn">Nombre completo</label><input id="nn"><label for="nt">Teléfono</label><input id="nt" inputmode="tel"><label for="np">Plan</label><select id="np">${opts()}</select><label for="na">Valor cobrado (COP)</label><input id="na" inputmode="numeric"><label for="nd">Duración (días)</label><input id="nd" inputmode="numeric"><button class="btn" id="sv">Registrar y cobrar</button><p class="mut" id="se"></p></div></details>
+<details class="card" style="margin-top:14px"><summary style="cursor:pointer;font-weight:600">Importar socios desde Excel o CSV</summary><div style="margin-top:10px"><p class="mut">Columnas: cédula, nombre, teléfono, plan y vence (fecha dd/mm/aaaa). Los socios sin fecha quedan como vencidos.</p><button class="btn s sm" id="tp">Descargar plantilla</button><input id="fi" type="file" accept=".xlsx,.xls,.csv" style="margin-top:10px"><div id="ip"></div><button class="btn" id="im" hidden>Importar</button></div></details>
+<div class="card" style="margin-top:14px"><h2>Exportar datos</h2><p class="mut">Descarga un Excel con tus socios y tus últimos 300 pagos como respaldo.</p><button class="btn s" id="ex2">Exportar a Excel</button></div>`,
 pagos:()=>`<h1>Pagos</h1><div class="grid g2"><div class="card"><h2>Registrar pago</h2><label for="pm">Socio</label><select id="pm"></select><label for="pp">Plan</label><select id="pp">${opts()}</select><label for="pa">Valor cobrado (COP)</label><input id="pa" inputmode="numeric"><label for="pd">Duración (días)</label><input id="pd" inputmode="numeric"><button class="btn" id="pg">Cobrar y renovar</button><p class="mut" id="pe"></p></div><div class="card"><h2>Pagos recientes</h2><div id="pl"></div></div></div>`,
+recepcion:()=>`<h1>Recepción</h1><div class="grid g2"><div class="card"><h2>Registrar entrada manual</h2><p class="mut">Para quien olvidó el celular o no puede escanear el QR.</p><label for="rc">Cédula del socio</label><input id="rc" inputmode="numeric" autocomplete="off" placeholder="Ej: 1085234222"><button class="btn" id="rg" style="width:100%">Registrar entrada</button><div id="rres" style="margin-top:12px"></div></div><div class="card"><h2>Entradas de hoy</h2><div id="rl"></div></div></div>`,
 tienda:()=>`<h1>Inventario</h1><div class="grid g2"><div class="card"><h2>Productos</h2><div id="pr"></div></div><div class="card"><h2 id="pt">Nuevo producto</h2><label for="pn">Nombre</label><input id="pn"><label for="pc">Precio de venta (COP)</label><input id="pc" inputmode="numeric"><label for="ps">Stock actual</label><input id="ps" inputmode="numeric"><label for="pmn">Avisar cuando queden</label><input id="pmn" inputmode="numeric" value="5"><button class="btn" id="pa2">Guardar producto</button><p class="mut" id="pe2"></p></div></div>`,
 cartel:()=>`<h1>Cartel QR</h1><div class="grid g2"><div class="card poster"><img class="logo" src="logo.jpg" alt="" onerror="this.style.display='none'"><h2 style="font-size:36px">Registra tu asistencia</h2><img class="qr" id="qr" alt="QR de registro"><p style="text-align:left;display:inline-block"><strong>1.</strong> Escanea el código con la cámara del celular<br><strong>2.</strong> Escribe tu número de cédula<br><strong>3.</strong> Listo, a entrenar</p></div><div class="card"><h2>Cómo funciona</h2><p>Imprime el cartel una sola vez y pégalo en la entrada. Todos los socios usan el mismo QR y el sistema valida la membresía con la cédula.</p><p class="mut" id="url" style="word-break:break-all"></p><button class="btn" onclick="window.print()">Imprimir cartel</button></div></div>`};
 function fill2(){const set=(i,h)=>{const e=$('#'+i);if(e)e.innerHTML=h},P2=Object.entries(PR).map(([id,p])=>({id,...p}));
  set('s5',P2.filter(p=>p.stock<=p.min).length);
+ set('rl',A.filter(a=>a.at.toDate()>=t0()).slice(0,15).map(a=>`<div class="row"><span>${esc(a.name)}</span><span class="mut">${ft(a.at.toDate())} ${a.ok?'✔':'· vencida'}</span></div>`).join('')||'<p class="mut">Aún no hay entradas hoy.</p>');
  {const tt=t0(),gp=x=>Math.round((tt-new Date(x+'T00:00:00'))/864e5),top=ST.filter(x=>gp(x.last)<=2).sort((a,b)=>b.count-a.count).slice(0,5);
  set('top',top.map((x,i)=>`<div class="row"><span>${i+1}. ${esc(x.name)}</span><strong>🔥 ${x.count} días</strong></div>`).join('')||'<p class="mut">Aún no hay rachas activas.</p>')}
  const days=[...Array(7)].map((_,i)=>{const d=t0();d.setDate(d.getDate()-6+i);return d}),k=d=>d.toDateString(),
@@ -68,12 +110,16 @@ function fill(){fill2();const tz=t0(),now=new Date(),L=Object.entries(M).map(([i
  set('ml',L.filter(m=>(m.name+m.id+(m.tel||'')).toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name)).map(m=>`<div class="row"><div>${esc(m.name)}<div class="mut">CC ${esc(m.id)} · ${esc(m.tel||'')} · ${m.plan} · vence ${fd(m.end)}</div></div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${bd(m)}${wa(m)}<button class="btn s sm" data-r="${esc(m.id)}">Renovar</button><button class="btn s sm" data-e="${esc(m.id)}">Editar</button><button class="btn s sm" data-x="${esc(m.id)}">Eliminar</button></div></div>`).join('')||'<p class="mut">Sin resultados.</p>');
  const pm=$('#pm');if(pm&&pm.options.length!==L.length)pm.innerHTML=L.map(m=>`<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('');
  set('pl',PY.slice(0,10).map(p=>`<div class="row"><div>${esc(p.name)}<div class="mut">${p.plan} · ${fd(p.at.toDate())}</div></div><strong>${money(p.amt)}</strong></div>`).join('')||'<p class="mut">Aún no hay pagos.</p>')}
-const N=[['panel','Panel'],['socios','Socios'],['pagos','Pagos'],['tienda','Inventario'],['cartel','Cartel QR']];
+const N=[['panel','Panel'],['recepcion','Recepción'],['socios','Socios'],['pagos','Pagos'],['tienda','Inventario'],['cartel','Cartel QR']];
 $('#nav').innerHTML=N.map(n=>`<button data-v="${n[0]}">${n[1]}</button>`).join('');$('#bar').innerHTML=$('#nav').innerHTML;
 function go(v){cur=v;document.querySelectorAll('[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));$('#main').innerHTML=V[v]();
  if(v==='cartel'){const q=qrcode(0,'M'),u=new URL('registro.html',location.href).href;q.addData(u);q.make();$('#qr').src=q.createDataURL(8,2);$('#url').textContent=u}if(v==='socios')preset('#np','#na','#nd');if(v==='pagos')preset('#pp','#pa','#pd');fill()}
 document.addEventListener('click',async e=>{const t=e.target,v=t.closest('[data-v]'),r=t.closest('[data-r]');
  if(v)return go(v.dataset.v);
+ if(t.id==='rg'){const c=$('#rc').value.replace(/\D/g,'');if(!c)return;const x=await manualEntry(c);$('#rres').innerHTML=`<div class="rbox ${x.k}"><b>${x.t}</b>${esc(x.d||'')}</div>`;$('#rc').value='';$('#rc').focus();return}
+ if(t.id==='tp'){dl('plantilla_socios.csv','cedula,nombre,telefono,plan,vence\n1085000001,Ejemplo Apellido,3150000000,Mensual,31/12/2026\n','text/csv');return}
+ if(t.id==='im'){doImport();return}
+ if(t.id==='ex2'){doExport();return}
  const ps=t.closest('[data-s]'),pa=t.closest('[data-a]'),pe=t.closest('[data-pe]'),px=t.closest('[data-px]');
  if(ps){const p=PR[ps.dataset.s];if(p.stock<=0)return alert('Producto agotado.');
   try{await setDoc(doc(db,'payments',crypto.randomUUID()),{cedula:'',name:'Venta',plan:'Venta: '+p.name,amt:p.price,days:0,kind:'venta',at:Timestamp.now()});await setDoc(doc(db,'products',ps.dataset.s),{...p,stock:p.stock-1})}catch(x){alert(msg(x))}return}
@@ -96,7 +142,8 @@ document.addEventListener('click',async e=>{const t=e.target,v=t.closest('[data-
  if(t.id==='pg'){const c=$('#pm').value,a=$('#pa').value.replace(/\D/g,''),d=+$('#pd').value.replace(/\D/g,'');if(!c)return $('#pe').textContent='Primero registra un socio.';
   if(a===''||!d)return $('#pe').textContent='Escribe el valor y los días.';const m=M[c];
   try{await charge(c,m.name,m.tel||'',$('#pp').value,d,+a);$('#pe').textContent='Pago de '+money(+a)+' registrado. '+m.name+' queda activo '+d+' días más.'}catch(x){$('#pe').textContent=msg(x)}}});
-document.addEventListener('change',e=>{if(e.target.id==='np')preset('#np','#na','#nd');if(e.target.id==='pp')preset('#pp','#pa','#pd')});
+document.addEventListener('change',e=>{if(e.target.id==='fi')parseFile(e.target.files[0]);if(e.target.id==='np')preset('#np','#na','#nd');if(e.target.id==='pp')preset('#pp','#pa','#pd')});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='rc')$('#rg').click()});
 document.addEventListener('input',e=>{if(e.target.id==='sq')fill()});
 $('#in').onclick=()=>signInWithEmailAndPassword(auth,$('#em').value,$('#pw').value).catch(()=>$('#err').textContent='Correo o contraseña incorrectos');
 $('#out').onclick=()=>signOut(auth);
